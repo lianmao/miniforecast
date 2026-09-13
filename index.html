@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MiniForecast — Demand Forecasting Tool</title>
+<meta name="description" content="Upload an Excel file of historical demand and get a statistical forecast from 8 models, scored on a holdout period. Runs entirely in your browser — no install, no signup, data never leaves your machine.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #e3e6ea;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --accent: #1f77b4;
+    --accent-soft: #eaf3fa;
+    --good: #047857;
+    --good-soft: #d1fae5;
+    --warn: #b45309;
+    --warn-soft: #fef3c7;
+    --bad: #b91c1c;
+    --bad-soft: #fee2e2;
+    --radius: 8px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .04);
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Must come before any rule that sets `display`, otherwise a class like
+     .grid-2 { display: grid } silently defeats the [hidden] attribute. */
+  [hidden] { display: none !important; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text);
+    background: var(--bg);
+  }
+
+  .layout { display: flex; min-height: 100vh; }
+
+  /* ---------- sidebar ---------- */
+  .sidebar {
+    width: 300px;
+    flex: 0 0 300px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  .brand { display: flex; align-items: baseline; gap: 8px; }
+  .brand h1 { font-size: 17px; margin: 0; letter-spacing: -.01em; }
+  .brand span { font-size: 11px; color: var(--muted); }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .dropzone {
+    border: 1.5px dashed #c3cad3;
+    border-radius: var(--radius);
+    padding: 20px 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    background: #fcfdfe;
+  }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+  .dropzone strong { display: block; font-size: 13px; }
+  .dropzone small { color: var(--muted); display: block; margin-top: 4px; }
+  input[type=file] { display: none; }
+
+  .sample-row { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .link-btn {
+    background: none; border: none; padding: 0; color: var(--accent);
+    font-size: 12px; cursor: pointer; text-align: left; text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .link-btn:hover { color: #155e8a; }
+
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav button {
+    display: flex; align-items: center; gap: 9px;
+    width: 100%; text-align: left; padding: 9px 11px;
+    border: none; border-radius: 6px; background: none; cursor: pointer;
+    font-size: 13.5px; color: var(--text); font-family: inherit;
+  }
+  .nav button:hover:not(:disabled) { background: #f1f3f6; }
+  .nav button.active { background: var(--accent-soft); color: #14567f; font-weight: 600; }
+  .nav button:disabled { color: #b6bcc4; cursor: not-allowed; }
+
+  .field { margin-bottom: 12px; }
+  .field label { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 4px; }
+  .field label b { font-weight: 600; color: var(--accent); }
+  select, input[type=range] { width: 100%; font-family: inherit; }
+  select {
+    padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--panel); font-size: 13px; color: var(--text);
+  }
+
+  .checkbox-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
+  .checkbox-row input { margin-top: 3px; }
+
+  .status { font-size: 12px; color: var(--muted); }
+  .status.ok { color: var(--good); }
+  .status.err { color: var(--bad); }
+
+  .badge {
+    display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 999px;
+    background: #eef1f4; color: var(--muted); white-space: nowrap;
+  }
+  .badge.good { background: var(--good-soft); color: var(--good); }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); }
+  .badge.bad  { background: var(--bad-soft); color: var(--bad); }
+
+  /* ---------- main ---------- */
+  main { flex: 1; min-width: 0; padding: 26px 30px 60px; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  h2 { font-size: 21px; margin: 0 0 4px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 13.5px; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; box-shadow: var(--shadow);
+  }
+  .card h3 { font-size: 14px; margin: 0 0 12px; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+
+  .metric {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .metric .k { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .metric .v { font-size: 21px; font-weight: 600; margin-top: 3px; }
+
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600;
+  }
+  tbody tr:hover { background: #fafbfc; }
+  tbody tr.winner { background: #f0fdf7; }
+  tbody tr.winner td:first-child { font-weight: 600; }
+
+  button.action {
+    font-family: inherit; font-size: 13px; font-weight: 500;
+    padding: 9px 15px; border-radius: 6px; border: 1px solid var(--accent);
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  button.action:hover:not(:disabled) { background: #19608f; }
+  button.action:disabled { opacity: .55; cursor: not-allowed; }
+  button.action.secondary { background: var(--panel); color: var(--accent); }
+  button.action.secondary:hover:not(:disabled) { background: var(--accent-soft); }
+
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+
+  .chart-box { position: relative; height: 320px; }
+  .chart-box.tall { height: 400px; }
+  .chart-box.short { height: 240px; }
+
+  .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .empty h2 { color: var(--text); }
+
+  .note {
+    font-size: 12.5px; color: var(--muted); background: #f8fafc;
+    border-left: 3px solid var(--border); padding: 8px 12px; border-radius: 0 6px 6px 0; margin-top: 10px;
+  }
+  .callout {
+    font-size: 13px; padding: 10px 13px; border-radius: 6px; margin-bottom: 14px;
+  }
+  .callout.info { background: var(--accent-soft); color: #14567f; }
+  .callout.warn { background: var(--warn-soft); color: var(--warn); }
+  .callout.good { background: var(--good-soft); color: var(--good); }
+
+  .spinner {
+    display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.45);
+    border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite;
+    vertical-align: -2px; margin-right: 7px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+
+  footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+  footer a { color: var(--accent); }
+
+  @media (max-width: 900px) {
+    .layout { flex-direction: column; }
+    .sidebar { width: 100%; flex: none; height: auto; position: static; }
+    .grid-2 { grid-template-columns: 1fr; }
+    main { padding: 20px 16px 50px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <h1>📊 MiniForecast</h1>
+      <span>v1.0</span>
+    </div>
+
+    <div>
+      <div class="section-label">1. Data</div>
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload an Excel file">
+        <strong>Drop an Excel file</strong>
+        <small>or click to browse &middot; .xlsx / .xls</small>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls">
+      <div class="sample-row">
+        <button class="link-btn" id="loadSingleSample" type="button">▶ Try it with sample data (1 product)</button>
+        <button class="link-btn" id="loadMultiSample" type="button">▶ Try it with sample data (4 products)</button>
+      </div>
+      <div class="status" id="fileStatus" role="status" aria-live="polite"></div>
+    </div>
+
+    <div id="settingsBlock" hidden>
+      <div class="section-label">2. Mode</div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="batchMode">
+        <label for="batchMode">Batch mode — forecast every product column at once</label>
+      </div>
+
+      <div class="field" id="productField" style="margin-top:12px">
+        <label for="productSelect">Product column</label>
+        <select id="productSelect"></select>
+      </div>
+
+      <div class="section-label" style="margin-top:16px">3. Settings</div>
+      <div class="field">
+        <label for="testPeriods">Holdout test periods <b id="testPeriodsVal">6</b></label>
+        <input type="range" id="testPeriods" min="3" max="18" step="1" value="6">
+      </div>
+      <div class="field">
+        <label for="seasonality">Season length (periods) <b id="seasonalityVal">12</b></label>
+        <input type="range" id="seasonality" min="2" max="52" step="1" value="12">
+      </div>
+      <div class="field">
+        <label for="horizon">Forecast horizon <b id="horizonVal">18</b></label>
+        <input type="range" id="horizon" min="3" max="36" step="1" value="18">
+      </div>
+
+      <div class="section-label" style="margin-top:16px">4. Navigate</div>
+      <nav class="nav" id="nav">
+        <button data-view="history" type="button">📋 History Data</button>
+        <button data-view="models" type="button">🔬 Model Selection</button>
+        <button data-view="forecast" type="button">📈 Forecast Results</button>
+        <button data-view="accuracy" type="button">📊 Accuracy Dashboard</button>
+      </nav>
+
+      <div class="section-label" style="margin-top:16px">ARIMA engine</div>
+      <div class="status" id="arimaStatus">loading…</div>
+    </div>
+  </aside>
+
+  <!-- ===================== MAIN ===================== -->
+  <main>
+
+    <!-- ---------- landing ---------- -->
+    <section class="view active" id="view-landing">
+      <div class="empty">
+        <h2>Upload your demand history</h2>
+        <p style="max-width:560px;margin:10px auto 0">
+          Drop an Excel file in the sidebar and MiniForecast will train
+          <strong>8 forecasting models</strong>, score them on a holdout window,
+          pick the best one, and project your horizon.
+        </p>
+        <p style="max-width:560px;margin:18px auto 0;font-size:13px">
+          Nothing is uploaded anywhere — the file is parsed and forecast entirely inside
+          your browser. No install, no account, no server.
+        </p>
+        <div class="card" style="max-width:640px;margin:26px auto 0;text-align:left">
+          <h3>Expected format</h3>
+          <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
+            A date column plus one or more numeric columns. Add extra product columns to
+            use batch mode.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Product_A</th><th>Product_B</th><th>Product_C</th></tr></thead>
+              <tbody>
+                <tr><td>2020-01-01</td><td>1025</td><td>508</td><td>1940</td></tr>
+                <tr><td>2020-02-01</td><td>1102</td><td>528</td><td>2302</td></tr>
+                <tr><td>…</td><td>…</td><td>…</td><td>…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note">Needs at least 12 data points per product; 36+ monthly points gives the seasonal models enough to work with.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- history ---------- -->
+    <section class="view" id="view-history">
+      <h2>📋 History Data</h2>
+      <p class="sub" id="historySub"></p>
+      <div class="grid-2" id="historyCharts"></div>
+      <div class="card">
+        <h3>Summary statistics</h3>
+        <div class="table-wrap"><table id="historyTable"></table></div>
+      </div>
+      <div class="card" id="historyRawCard">
+        <h3>Recent periods</h3>
+        <div class="table-wrap"><table id="historyRaw"></table></div>
+      </div>
+    </section>
+
+    <!-- ---------- model selection ---------- -->
+    <section class="view" id="view-models">
+      <h2>🔬 Model Selection</h2>
+      <p class="sub" id="modelsSub"></p>
+
+      <div class="row" style="margin-bottom:14px">
+        <button class="action" id="runModels" type="button">Run all models</button>
+        <span class="spacer"></span>
+        <span class="badge" id="modelsTiming"></span>
+      </div>
+
+      <div id="modelsIntro" class="callout info">
+        Trains each model on all but the last <b id="introTestPeriods">6</b> periods, then scores
+        its predictions on that held-out window. Lower MAPE is better.
+      </div>
+
+      <div id="modelsResults" hidden>
+        <div class="card" id="comparisonCard">
+          <h3>Model comparison <span class="badge" id="modelsBadge"></span></h3>
+          <div class="table-wrap"><table id="comparisonTable"></table></div>
+          <div class="note" id="modelsNote"></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>MAPE by model (lower is better)</h3>
+            <div class="chart-box"><canvas id="mapeChart"></canvas></div>
+          </div>
+          <div class="card">
+            <h3>Holdout fit — actual vs predicted</h3>
+            <div class="chart-box"><canvas id="fitChart"></canvas></div>
+          </div>
+        </div>
+
+        <div class="card" id="pickCard">
+          <h3>Choose the model to forecast with</h3>
+          <div class="row">
+            <select id="modelPick" style="max-width:320px"></select>
+            <button class="action" id="useModel" type="button">Use this model → Forecast</button>
+          </div>
+          <div class="note" id="modelPickNote"></div>
+        </div>
+
+        <div class="card" id="perProductCard" hidden>
+          <h3>Best model per product</h3>
+          <p style="color:var(--muted);font-size:13px;margin:0 0 12px">
+            Each product is assigned the model that scored best on its own holdout window —
+            not one compromise model for the whole file.
+          </p>
+          <div class="table-wrap"><table id="perProductTable"></table></div>
+
+          <div class="row" style="margin-top:18px">
+            <label for="inspectProductSelect" style="font-size:13px;font-weight:500">Inspect product:</label>
+            <select id="inspectProductSelect" style="max-width:280px"></select>
+          </div>
+          <h3 style="margin-top:16px" id="batchRankingTitle">Model ranking</h3>
+          <div class="table-wrap"><table id="batchRankingTable"></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- forecast ---------- -->
+    <section class="view" id="view-forecast">
+      <h2>📈 Forecast Results</h2>
+      <p class="sub" id="forecastSub"></p>
+      <div class="row" style="margin-bottom:14px">
+        <button class="action" id="runForecast" type="button">Generate forecast</button>
+        <button class="action secondary" id="downloadCsv" type="button" disabled>Download CSV</button>
+      </div>
+      <div id="forecastEmpty" class="callout warn">Pick a model on the Model Selection page first.</div>
+      <div id="forecastBody" hidden>
+        <div class="grid-metrics" id="forecastMetrics"></div>
+        <div class="card" style="margin-top:16px">
+          <h3 id="forecastChartTitle">History and forecast</h3>
+          <div class="chart-box tall"><canvas id="forecastChart"></canvas></div>
+        </div>
+        <div class="card">
+          <h3 id="forecastTableTitle">Forecast detail</h3>
+          <div class="table-wrap"><table id="forecastTable"></table></div>
+          <div class="note" id="forecastNote"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- accuracy ---------- -->
+    <section class="view" id="view-accuracy">
+      <h2>📊 Accuracy Dashboard</h2>
+      <p class="sub" id="accuracySub"></p>
+      <div id="accuracyEmpty" class="callout warn">Run model selection first.</div>
+      <div id="accuracyBody" hidden>
+        <div class="grid-metrics" id="accuracyMetrics"></div>
+
+        <div class="card" id="batchAccuracyCard" hidden style="margin-top:16px">
+          <h3>Per-product accuracy</h3>
+          <p style="color:var(--muted);font-size:13px;margin:0 0 12px">
+            Every product scored on its own holdout window, using its own best model.
+          </p>
+          <div class="table-wrap"><table id="batchAccuracyTable"></table></div>
+        </div>
+
+        <div class="grid-2" id="accuracyDiagnostics" style="margin-top:16px">
+          <div class="card">
+            <h3>Actual vs predicted</h3>
+            <div class="chart-box"><canvas id="accuracyActualChart"></canvas></div>
+          </div>
+          <div class="card">
+            <h3>Residuals</h3>
+            <div class="chart-box"><canvas id="accuracyResidualChart"></canvas></div>
+          </div>
+        </div>
+        <div class="card" id="accuracyHistCard">
+          <h3>Error distribution</h3>
+          <div class="chart-box short"><canvas id="accuracyHistChart"></canvas></div>
+          <div class="note" id="accuracyNote"></div>
+        </div>
+        <div class="card">
+          <h3>How each metric behaves</h3>
+          <div class="table-wrap"><table id="metricExplainer"></table></div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <strong>MiniForecast</strong> — runs entirely in your browser; your data is never uploaded.
+      Models: seasonal naive, moving average, exponential smoothing, Holt, Holt-Winters (additive &amp;
+      multiplicative), ARIMA (auto), linear trend.
+      &nbsp;·&nbsp; <a href="https://github.com/lianmao/miniforecast">Source on GitHub</a>
+    </footer>
+  </main>
+</div>
+
+<!-- Vendored libraries: no CDN, so the tool works offline and behind restrictive networks -->
+<script src="vendor/chart.umd.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/arima.js"></script>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>

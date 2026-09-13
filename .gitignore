@@ -1,0 +1,16 @@
+# ---- Dependencies (only needed to rebuild vendor/ or run tests) ----
+node_modules/
+
+# ---- Vendored browser builds ARE committed (see README) ----
+# vendor/ is intentionally NOT ignored.
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---- Logs / scratch ----
+*.log
+scratch/

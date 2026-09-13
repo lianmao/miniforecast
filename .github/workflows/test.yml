@@ -1,0 +1,45 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Only needed for the test fixture loader, which reads vendor/*.js directly.
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run test suites
+        run: npm test
+
+      - name: Verify the vendored browser bundles are present and non-empty
+        run: |
+          for f in vendor/chart.umd.js vendor/xlsx.full.min.js vendor/arima.js; do
+            if [ ! -s "$f" ]; then
+              echo "::error::$f is missing or empty — run: node scripts/build-vendor.mjs"
+              exit 1
+            fi
+            echo "$f: $(wc -c < "$f") bytes"
+          done
+
+      - name: Check the app's module graph loads
+        run: |
+          node --input-type=module -e "
+            await import('./src/metrics.js');
+            await import('./src/optimize.js');
+            await import('./src/models.js');
+            await import('./src/data.js');
+            await import('./src/arima.js');
+            console.log('all src modules import cleanly');
+          "
