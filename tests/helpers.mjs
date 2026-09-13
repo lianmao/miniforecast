@@ -11,7 +11,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 /** SheetJS ships a UMD bundle — take its CommonJS branch and expose it globally. */
 export function loadXlsx() {
   if (globalThis.XLSX) return globalThis.XLSX
-  const code = readFileSync(join(root, 'vendor/xlsx.full.min.js'), 'utf8')
+  const code = readFileSync(join(root, 'vendor/xlsx.mini.min.js'), 'utf8')
   const module = { exports: {} }
   // eslint-disable-next-line no-new-func
   new Function('module', 'exports', 'require', code)(module, module.exports, () => ({}))

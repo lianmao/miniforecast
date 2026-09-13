@@ -45,8 +45,12 @@ data — is visible.
 
 ### Input format
 
-A date column plus one or more numeric columns. The date column is auto-detected by name
-(`date`, `month`, `period`, …) and falls back to whichever column parses as dates.
+A `.xlsx` file with a date column plus one or more numeric columns. The date column is
+auto-detected by name (`date`, `month`, `period`, …) and falls back to whichever column
+parses as dates.
+
+*(Legacy `.xls` is not accepted — save as `.xlsx` first. The original Python version
+advertised `.xls` but could not actually read it either.)*
 
 Single product:
 
@@ -89,8 +93,11 @@ Smoothing parameters are fitted with a **Nelder-Mead simplex** search rather tha
 grid, so the accuracy figures reflect a real optimum.
 
 **On ARIMA:** it is a vendored build of the MIT-licensed [`arima`](https://github.com/zemlyansky/arima)
-package (an Emscripten port of the `ctsa` C library), bundled with its WASM payload and
-loaded asynchronously — Chrome refuses to synchronously compile WASM over 4 KB. If the WASM
+package (an Emscripten port of the `ctsa` C library), bundled with its WASM payload. It is
+fetched **on demand** rather than on first paint, because those 306 KB are the difference
+between roughly a 2 s and a 7 s cold start; the download is kicked off right after the page
+initialises so it has normally arrived before anyone clicks *Run all models*. The async WASM
+build is used because Chrome refuses to synchronously compile WASM over 4 KB. If the WASM
 fails to load, the other seven models still work.
 
 ## Metrics
@@ -136,8 +143,10 @@ take the tool down). Rebuild it after changing versions in `package.json`:
 node scripts/build-vendor.mjs
 ```
 
-That copies Chart.js and SheetJS and bundles ARIMA into a browser-safe IIFE with esbuild.
-`node_modules/` is not committed.
+That copies Chart.js and SheetJS (the 245 KB `mini` build — the app only reads `.xlsx`) and
+bundles ARIMA into a browser-safe IIFE with esbuild. `node_modules/` is not committed.
+
+Initial page weight is ~600 KB; ARIMA's 306 KB is fetched separately on demand.
 
 ## Deployment
 

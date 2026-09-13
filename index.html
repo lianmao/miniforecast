@@ -230,9 +230,9 @@
       <div class="section-label">1. Data</div>
       <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload an Excel file">
         <strong>Drop an Excel file</strong>
-        <small>or click to browse &middot; .xlsx / .xls</small>
+        <small>or click to browse &middot; .xlsx</small>
       </div>
-      <input type="file" id="fileInput" accept=".xlsx,.xls">
+      <input type="file" id="fileInput" accept=".xlsx">
       <div class="sample-row">
         <button class="link-btn" id="loadSingleSample" type="button">▶ Try it with sample data (1 product)</button>
         <button class="link-btn" id="loadMultiSample" type="button">▶ Try it with sample data (4 products)</button>
@@ -462,10 +462,15 @@
   </main>
 </div>
 
-<!-- Vendored libraries: no CDN, so the tool works offline and behind restrictive networks -->
-<script src="vendor/chart.umd.js"></script>
-<script src="vendor/xlsx.full.min.js"></script>
-<script src="vendor/arima.js"></script>
+<!--
+  Vendored libraries: no CDN, so the tool works offline and behind restrictive
+  networks. `defer` lets the shell paint while these download.
+
+  vendor/arima.js is NOT in this list on purpose — it is 306 KB and gets fetched
+  on demand (see src/arima.js), which keeps first paint fast.
+-->
+<script defer src="vendor/chart.umd.js"></script>
+<script defer src="vendor/xlsx.mini.min.js"></script>
 <script type="module" src="src/app.js"></script>
 </body>
 </html>

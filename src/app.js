@@ -966,15 +966,18 @@ function init() {
   $('runForecast').addEventListener('click', runForecast)
   $('downloadCsv').addEventListener('click', downloadCsv)
 
-  // Report ARIMA readiness — the WASM compiles in the background.
+  // Fetch the ARIMA bundle now rather than at first use: it is 306 KB, so the
+  // download should overlap with the user reading the page instead of stalling
+  // their first "Run all models" click.
   const arimaStatus = $('arimaStatus')
+  arimaStatus.textContent = 'downloading…'
   loadArima()
     .then(() => {
       arimaStatus.textContent = 'ready'
       arimaStatus.className = 'status ok'
     })
     .catch(() => {
-      arimaStatus.textContent = 'unavailable — 7 models available'
+      arimaStatus.textContent = 'unavailable — the other 7 models still work'
       arimaStatus.className = 'status err'
     })
 

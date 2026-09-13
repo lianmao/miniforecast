@@ -25,9 +25,13 @@ const jobs = [
     to: 'vendor/chart.umd.js',
   },
   {
-    label: 'SheetJS xlsx 0.18.5 (full, minified)',
-    from: 'node_modules/xlsx/dist/xlsx.full.min.js',
-    to: 'vendor/xlsx.full.min.js',
+    // The "mini" build reads and writes .xlsx only, and is less than a third the
+    // size of the full one (250 KB vs 861 KB). The full build's extras — legacy
+    // .xls, ODS, CSV, codepage tables — are not used here, and on the slow
+    // GitHub-Pages-from-China path those 600 KB are several seconds of boot.
+    label: 'SheetJS xlsx 0.18.5 (mini, minified)',
+    from: 'node_modules/xlsx/dist/xlsx.mini.min.js',
+    to: 'vendor/xlsx.mini.min.js',
   },
 ]
 

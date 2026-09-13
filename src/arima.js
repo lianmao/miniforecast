@@ -3,27 +3,68 @@
  * port of the ctsa C library).
  *
  * vendor/arima.js is a pre-bundled IIFE that defines `globalThis.ARIMAAsync` as a
- * Promise resolving to the ARIMA constructor. The async build is used because
- * Chrome refuses to synchronously compile WASM modules larger than 4 KB, and this
- * payload is ~210 KB. Keeping the promise means the page can render and train the
- * other seven models while the WASM is still compiling.
+ * Promise resolving to the ARIMA constructor. Two deliberate choices:
+ *
+ *  1. It is loaded *on demand* rather than via a <script> tag. It is 306 KB and
+ *     nothing else needs it, so paying for it on first paint — which on GitHub
+ *     Pages from mainland China is the difference between a ~2s and a ~7s boot —
+ *     is a bad trade. app.js kicks the download off right after init, so in
+ *     practice it has arrived before anyone clicks "Run all models".
+ *  2. It uses the package's *async* build, because Chrome refuses to synchronously
+ *     compile WASM modules larger than 4 KB and this payload is ~210 KB.
  */
+
+const SCRIPT_URL = 'vendor/arima.js'
+const SCRIPT_MARKER = 'data-miniforecast-arima'
 
 let cachedLoad = null
 
-/** True when vendor/arima.js has been included on the page. */
+/** True when vendor/arima.js has already been fetched and executed. */
 export function arimaAvailable() {
   return typeof globalThis.ARIMAAsync !== 'undefined'
 }
 
-/** Resolves to the ARIMA constructor (compiling the WASM on first call). */
+function injectScript() {
+  return new Promise((resolve, reject) => {
+    // Reuse a script tag that is already in flight, if there is one.
+    const existing = document.querySelector(`script[${SCRIPT_MARKER}]`)
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true })
+      existing.addEventListener('error', () => reject(new Error(`could not load ${SCRIPT_URL}`)), { once: true })
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = SCRIPT_URL
+    script.async = true
+    script.setAttribute(SCRIPT_MARKER, 'true')
+    script.addEventListener('load', () => resolve(), { once: true })
+    script.addEventListener('error', () => reject(new Error(`could not load ${SCRIPT_URL}`)), { once: true })
+    document.head.appendChild(script)
+  })
+}
+
+/**
+ * Resolves to the ARIMA constructor, downloading and compiling the WASM bundle
+ * on first call. Failures are not cached, so a flaky network can be retried.
+ */
 export function loadArima() {
-  if (!arimaAvailable()) {
-    return Promise.reject(
-      new Error('ARIMA bundle missing — vendor/arima.js must be loaded before forecasting'),
-    )
+  if (cachedLoad) return cachedLoad
+
+  if (!arimaAvailable() && typeof document === 'undefined') {
+    // Node context (the test harness loads the bundle explicitly).
+    return Promise.reject(new Error('ARIMA bundle missing — vendor/arima.js must be loaded before forecasting'))
   }
-  if (!cachedLoad) cachedLoad = Promise.resolve(globalThis.ARIMAAsync)
+
+  cachedLoad = (arimaAvailable() ? Promise.resolve() : injectScript()).then(() => {
+    if (!arimaAvailable()) throw new Error('ARIMA bundle loaded but exposed no runtime')
+    return globalThis.ARIMAAsync
+  })
+
+  cachedLoad.catch(() => {
+    cachedLoad = null
+  })
+
   return cachedLoad
 }
 

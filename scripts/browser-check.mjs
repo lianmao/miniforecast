@@ -115,11 +115,13 @@ const DRIVER = `(async () => {
 
   const out = {}
 
-  await wait(() => $('arimaStatus').textContent === 'ready', 30000, 'arima ready')
+  // app.js must have run before anything is clickable — the static HTML contains
+  // an #arimaStatus placeholder, so its mere presence proves nothing.
+  await wait(() => ['ready', 'unavailable — the other 7 models still work'].includes($('arimaStatus').textContent), 90000, 'app initialised')
   out.arimaStatus = $('arimaStatus').textContent
 
   document.getElementById('loadMultiSample').click()
-  await wait(() => rows('historyTable').length === 4, 30000, 'history table')
+  await wait(() => rows('historyTable').length === 4, 90000, 'history table')
   out.fileStatus = $('fileStatus').textContent
   out.products = rows('historyTable').map((r) => r[0])
   out.historyCanvases = document.querySelectorAll('#historyCharts canvas').length
@@ -191,6 +193,25 @@ try {
   const client = await connect(page.webSocketDebuggerUrl)
   await client.send('Runtime.enable')
   await client.send('Log.enable')
+  await client.send('Page.enable')
+
+  // The debugger target exists as soon as Chrome creates it, which can be before
+  // the document is parsed — and over a real network (GitHub Pages) that gap is
+  // long enough to bite. Wait for the app shell before driving it.
+  let shellReady = false
+  for (let i = 0; i < 150; i++) {
+    const { result } = await client.send('Runtime.evaluate', {
+      expression: "document.readyState === 'complete' && Boolean(document.getElementById('arimaStatus'))",
+      returnByValue: true,
+    })
+    if (result.value === true) {
+      shellReady = true
+      break
+    }
+    await sleep(200)
+  }
+  if (!shellReady) console.log('  [warn] app shell did not appear within 30s — driving anyway')
+  else console.log('App shell ready.\n')
 
   console.log('Driving the app in a real browser…\n')
   const result = await client.send('Runtime.evaluate', {
