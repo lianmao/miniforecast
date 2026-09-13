@@ -142,6 +142,33 @@ test('reported runtimes reflect real work rather than concurrency stalls', async
   }
 })
 
+/**
+ * On a slow or filtered network the ARIMA bundle may never arrive. The run must
+ * still produce a full comparison with ARIMA marked as failed, rather than
+ * quietly vanishing from the table or taking the whole page down.
+ */
+test('a model that fails to load is reported, not silently dropped', async () => {
+  const arima = MODELS.find((m) => m.key === 'arima')
+  const original = arima.run
+  arima.run = async () => {
+    throw new Error('simulated network failure')
+  }
+  try {
+    const { rows } = await evaluateAll(syntheticSeries(60), { testPeriods: 6, seasonality: 12 })
+    assert.equal(rows.length, 8, 'the failed model must still occupy a row')
+
+    const failed = rows.find((r) => r.key === 'arima')
+    assert.match(failed.error, /simulated network failure/)
+    assert.equal(failed.score, Number.POSITIVE_INFINITY)
+    assert.equal(failed.fitted, null)
+    assert.equal(rows.at(-1).key, 'arima', 'the failed model sorts last')
+
+    assert.equal(rows.filter((r) => !r.error).length, 7, 'the other seven models still run')
+  } finally {
+    arima.run = original
+  }
+})
+
 test('evaluateAll rejects series that are too short to hold out from', async () => {
   await assert.rejects(
     () => evaluateAll([1, 2, 3, 4, 5, 6], { testPeriods: 6 }),
